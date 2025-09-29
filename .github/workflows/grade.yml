@@ -5,6 +5,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+# All run steps execute inside the subfolder
+defaults:
+  run:
+    working-directory: 5-2-react-starter
+
+env:
+  # Set your due date (Riyadh +03:00)
+  DUE_DATE: "2025-10-01T23:59:59+03:00"
+  SUBDIR: 5-2-react-starter
+
 jobs:
   grade:
     runs-on: ubuntu-latest
@@ -20,7 +30,7 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Detect project files
+      - name: Detect project files (in subfolder)
         id: detect
         run: |
           echo "has_pkg=$( [ -f package.json ] && echo true || echo false )" >> $GITHUB_OUTPUT
@@ -38,17 +48,15 @@ jobs:
 
       - name: Run grader (if grader exists)
         if: steps.detect.outputs.has_grader == 'true'
-        env:
-          # Arabia Standard Time is +03:00
-          DUE_DATE: "2025-10-01T23:59:59+03:00"
         run: npm run grade
 
       - name: Upload grade artifact (JSON + Markdown) if present
-        if: ${{ hashFiles('grading/**') != '' }}
+        # hashFiles evaluates from repo root, so use the subdir path
+        if: ${{ hashFiles('5-2-react-starter/grading/**') != '' }}
         uses: actions/upload-artifact@v4
         with:
           name: grade-report
-          path: grading/
+          path: ${{ github.workspace }}/5-2-react-starter/grading/
 
       - name: Publish Grade Summary
         if: always()
@@ -57,5 +65,13 @@ jobs:
           {
             echo "## Auto Grade Report"
             echo
-            test -f grading/grade.md && cat grading/grade.md || echo "No grading output produced."
+            if [ -f grading/grade.md ]; then
+              # defaults.run puts us in subfolder, so grading/grade.md is local
+              cat grading/grade.md
+            else
+              echo "No grading output produced."
+              echo "- Ensure package.json and scripts/grader.js exist in $SUBDIR."
+              echo "- Verify the npm script: \"grade\": \"node scripts/grader.js\"."
+              echo "- Push another commit or Run workflow manually."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
