@@ -1,0 +1,46 @@
+name: Auto Grade
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  grade:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (with history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Use Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: npm ci || npm install
+
+      - name: Run grader
+        env:
+          # Set your real due date here (ISO 8601, e.g. local Arabia Standard Time = +03:00)
+          # Example: 2025-10-05 23:59:59 in Riyadh time
+          DUE_DATE: "2025-10-01T23:59:59+03:00"
+        run: npm run grade
+
+      - name: Upload grade artifact (JSON + Markdown)
+        uses: actions/upload-artifact@v4
+        with:
+          name: grade-report
+          path: grading/
+
+      - name: Publish Grade Summary
+        if: always()
+        run: |
+          echo "## Auto Grade Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f grading/grade.md ]; then
+            cat grading/grade.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No grade.md produced." >> $GITHUB_STEP_SUMMARY
+          fi
