@@ -52,12 +52,10 @@ jobs:
 
       - name: Publish Grade Summary
         if: always()
+        shell: bash
         run: |
-          echo "## Auto Grade Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f grading/grade.md ]; then
-            cat grading/grade.md >> $GITHUB_STEP_SUMMARY
-          else
-            echo "No grading output produced." >> $GITHUB_STEP_SUMMARY
-            echo "- Ensure package.json and scripts/grader.js exist." >> $GITHUB_STEP_SUMMARY
-            echo "- Push another commit or run this workflow manually." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## Auto Grade Report"
+            echo
+            test -f grading/grade.md && cat grading/grade.md || echo "No grading output produced."
+          } >> "$GITHUB_STEP_SUMMARY"
