@@ -48,7 +48,7 @@ function Welcome() {
 When you create a React project (using Vite or Create React App), the structure looks like this:
 
 ```
-my-react-starter/
+react-starter/
 ├── node_modules/        # Dependencies
 ├── public/              # Static files
 ├── src/                 # Your code lives here
