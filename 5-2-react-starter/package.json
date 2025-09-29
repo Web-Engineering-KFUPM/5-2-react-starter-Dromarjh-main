@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "grade": "node scripts/grader.cjs"
+    "grade": "node scripts/grader.cjs",
+    "test:grader": "node tests/test-grader.cjs"
   },
   "dependencies": {
     "react": "^19.1.1",
