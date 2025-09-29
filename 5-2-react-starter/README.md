@@ -48,7 +48,7 @@ function Welcome() {
 When you create a React project (using Vite or Create React App), the structure looks like this:
 
 ```
-my-react-lab/
+my-react-starter/
 ├── node_modules/        # Dependencies
 ├── public/              # Static files
 ├── src/                 # Your code lives here
@@ -81,7 +81,7 @@ Run the following commands in VS Code terminal:
 
 ```bash
 # Create a new Vite project
-npm create vite@latest react-starter-
+npm create vite@latest react-starter
 
 # Navigate into the folder
 cd react-starter
