@@ -9,15 +9,12 @@ In this lab, you will create a simple React project using Vite. The goal is to u
 ------------------------------------------------------------
 Setup
 ------------------------------------------------------------
-1. Open VS Code terminal.
-2. Run the following commands:
+1. Open VS Code and go to the terminal.
+2. Move into the project folder by running: cd 5-2-react-starter
+3. Install the required node modules by running: npm install or npm i
+4. To see the output, start the development server by running: npm run dev
 
-   npm create vite@latest react-starter
-   cd react-starter
-   npm install
-   npm run dev
-
-Note: For this lab the project (vite + react) is already created, the above setup is just for your understanding
+Note: In order to gain good marks in the lab, please follow the lab instructions strickly.
 
 3. Inside the project folder, go to src and create a new folder called:
 

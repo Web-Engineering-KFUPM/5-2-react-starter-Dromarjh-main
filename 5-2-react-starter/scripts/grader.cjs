@@ -2,8 +2,8 @@
 // Flexible, resilient grader for the React Starter Lab (JS + JSX)
 // - Works even if Task 2 is missing
 // - Compatible with projects that use "type": "module" (use .cjs to avoid ESM issues)
-// - More forgiving scoring so "basic but working" code still earns ~5/8 on quality
-// - Gives short feedback for each grade category
+// - Softer scoring, but now without "commenting" in Code Quality
+// - Detailed feedback: shows achieved and missed checks with point deltas
 
 const fs = require('fs');
 const path = require('path');
@@ -28,6 +28,19 @@ function firstThatExists(paths) {
 function readFirst(paths) {
   const p = firstThatExists(paths);
   return { path: p || null, content: p ? safeRead(p) : '' };
+}
+
+// feedback item helper
+function addCheck(bucket, condition, pts, okMsg, missMsg) {
+  bucket.items.push({
+    ok: !!condition,
+    points: condition ? pts : 0,
+    max: pts,
+    okMsg,
+    missMsg,
+  });
+  bucket.total += condition ? pts : 0;
+  bucket.max += pts;
 }
 
 /* ---------------------------
@@ -77,7 +90,7 @@ const anyComponentDecl =
   hasRegex(studentCardFile, /\bconst\s+[A-Za-z_]\w*\s*=\s*\(/) ||
   hasRegex(studentCardFile, /\bconst\s+[A-Za-z_]\w*\s*=\s*.*=>/);
 
-// Specifically named StudentCard (for some correctness checks)
+// Specifically named StudentCard (for potential future use)
 const namedStudentCardDecl =
   hasRegex(studentCardFile, /\bfunction\s+StudentCard\s*\(/) ||
   hasRegex(studentCardFile, /\bconst\s+StudentCard\s*=\s*\(/) ||
@@ -136,142 +149,112 @@ const usesAllThreeProps =
   (hasRegex(studentCardFile, /\bprops\.(id|studentId)\b/) || hasRegex(studentCardFile, /\{(?:id|studentId)\}/)) &&
   (hasRegex(studentCardFile, /\bprops\.(department|dept)\b/) || hasRegex(studentCardFile, /\{(?:department|dept)\}/));
 
-// Has comment
-const hasAnyComment = hasRegex(studentCardFile, /\/\/|\/\*|\*\//);
-
 /* ---------------------------
    Task 1 Scoring (40)
    Correctness: 18, Completeness: 14, Quality: 8
 ----------------------------*/
-let t1_correctness = 0, t1_completeness = 0, t1_quality = 0;
-const t1_fb = { correctness: [], completeness: [], quality: [] };
+const t1 = { correctness: { items: [], total: 0, max: 0 },
+             completeness: { items: [], total: 0, max: 0 },
+             quality: { items: [], total: 0, max: 0 } };
 
-// Correctness (18) — flexible
-// +6 component exists (any name/case) & has JSX
-if (anyComponentDecl && hasJSXReturn) { t1_correctness += 6; t1_fb.correctness.push('Component with JSX found.'); }
-else t1_fb.correctness.push('Component/JSX not clearly detected.');
-
-// +6 imported OR rendered in App
-if (importStudentCard || rendersStudentCard) { t1_correctness += 6; t1_fb.correctness.push('Component is imported or rendered in App.'); }
-else t1_fb.correctness.push('Not imported or rendered in App.');
-
-// +6 rendered at least once
-if (rendersStudentCard) { t1_correctness += 6; t1_fb.correctness.push('Component is rendered in App.'); }
-else t1_fb.correctness.push('No rendering detected in App.');
-
-t1_correctness = points(t1_correctness, 18);
+// Correctness (18)
+addCheck(t1.correctness, anyComponentDecl && hasJSXReturn, 6, 'Component with JSX found.', 'Component/JSX not clearly detected.');
+addCheck(t1.correctness, importStudentCard || rendersStudentCard, 6, 'Component is imported or rendered in App.', 'Not imported or rendered in App.');
+addCheck(t1.correctness, rendersStudentCard, 6, 'Component is rendered in App.', 'No rendering detected in App.');
 
 // Completeness (14)
-// +3 file exists
-if (hasStudentCardFile) { t1_completeness += 3; t1_fb.completeness.push('StudentCard file found.'); }
-else t1_fb.completeness.push('StudentCard file missing.');
+addCheck(t1.completeness, hasStudentCardFile, 3, 'StudentCard file found.', 'StudentCard file missing.');
+addCheck(t1.completeness, hasNameLabel, 4, 'Name label shown.', 'Name label not detected.');
+addCheck(t1.completeness, hasIdLabel, 3, 'ID/Student ID label shown.', 'ID/Student ID label not detected.');
+addCheck(t1.completeness, hasDeptLabel, 4, 'Department/Dept label shown.', 'Department/Dept label not detected.');
 
-// +4 Name label present
-if (hasNameLabel) { t1_completeness += 4; t1_fb.completeness.push('Name is shown.'); }
-else t1_fb.completeness.push('Name label not detected.');
+// Quality (8) — rebalanced (removed comment; +JSX from 1→2)
+addCheck(t1.quality, hasStudentCardFile, 2, 'File present.', 'Expected file not found.');
+addCheck(t1.quality, anyComponentDecl, 2, 'Reasonable component structure.', 'Component structure not detected.');
+addCheck(t1.quality, hasJSXReturn, 2, 'JSX used.', 'No JSX return detected.');
+addCheck(t1.quality, anyExport, 1, 'Exports detected.', 'No export detected.');
+addCheck(t1.quality, (importStudentCard || rendersStudentCard) && rendersStudentCard, 1, 'Wired into App.', 'Not wired into App (import + render).');
 
-// +3 ID label present (ID or Student ID)
-if (hasIdLabel) { t1_completeness += 3; t1_fb.completeness.push('ID is shown.'); }
-else t1_fb.completeness.push('ID label not detected.');
-
-// +4 Department/Dept label present
-if (hasDeptLabel) { t1_completeness += 4; t1_fb.completeness.push('Department is shown.'); }
-else t1_fb.completeness.push('Department/Dept label not detected.');
-
-t1_completeness = points(t1_completeness, 14);
-
-// Quality (8) — softer & baseline ~5/8 for basic implementations
-// +2 baseline if file exists
-if (hasStudentCardFile) { t1_quality += 2; t1_fb.quality.push('File present.'); }
-// +2 any component-like declaration (any name/case)
-if (anyComponentDecl) { t1_quality += 2; t1_fb.quality.push('Reasonable component structure.'); }
-// +1 JSX present
-if (hasJSXReturn) { t1_quality += 1; t1_fb.quality.push('JSX used.'); }
-// +1 any export (named or default)
-if (anyExport) { t1_quality += 1; t1_fb.quality.push('Exports detected.'); }
-// +1 at least one comment
-if (hasAnyComment) { t1_quality += 1; t1_fb.quality.push('Comment present.'); }
-// +1 small bonus if imported & rendered in App
-if ((importStudentCard || rendersStudentCard) && rendersStudentCard) { t1_quality += 1; t1_fb.quality.push('Wired into App.'); }
-
-t1_quality = points(t1_quality, 8);
-
-const task1Total = t1_correctness + t1_completeness + t1_quality;
+const task1Total = points(t1.correctness.total, 18) + points(t1.completeness.total, 14) + points(t1.quality.total, 8);
 
 /* ---------------------------
    Task 2 Scoring (40)
    Correctness: 18, Completeness: 14, Quality: 8
 ----------------------------*/
-let t2_correctness = 0, t2_completeness = 0, t2_quality = 0;
-const t2_fb = { correctness: [], completeness: [], quality: [] };
+const t2 = { correctness: { items: [], total: 0, max: 0 },
+             completeness: { items: [], total: 0, max: 0 },
+             quality: { items: [], total: 0, max: 0 } };
 
 // Correctness (18)
-// +6 accepts props (params use props or destructuring) OR props used in JSX
-if (acceptsProps || usesPropsVars) { t2_correctness += 6; t2_fb.correctness.push('Props accepted/used.'); }
-else t2_fb.correctness.push('Props not clearly accepted/used.');
-
-// +6 uses props in JSX (explicit rendering)
-if (usesPropsVars) { t2_correctness += 6; t2_fb.correctness.push('Props displayed in JSX.'); }
-else t2_fb.correctness.push('Props not shown in JSX.');
-
-// +6 renders two instances
-if (hasTwoInstances) { t2_correctness += 6; t2_fb.correctness.push('Two <StudentCard> instances rendered.'); }
-else t2_fb.correctness.push('Less than two instances rendered.');
-
-t2_correctness = points(t2_correctness, 18);
+addCheck(t2.correctness, acceptsProps || usesPropsVars, 6, 'Props accepted/used.', 'Props not clearly accepted/used.');
+addCheck(t2.correctness, usesPropsVars, 6, 'Props displayed in JSX.', 'Props not shown in JSX.');
+addCheck(t2.correctness, hasTwoInstances, 6, 'Two <StudentCard> instances rendered.', 'Less than two instances rendered.');
 
 // Completeness (14)
-// +9 uses all three props (name + id/studentId + department/dept)
-if (usesAllThreeProps) { t2_completeness += 9; t2_fb.completeness.push('All three props used (name, id/studentId, department/dept).'); }
-else t2_fb.completeness.push('Missing one or more props (name, id/studentId, department/dept).');
+addCheck(t2.completeness, usesAllThreeProps, 9, 'All three props used (name, id/studentId, department/dept).', 'Missing one or more required props.');
+addCheck(t2.completeness, twoDifferentNames || twoDifferentIds, 5, 'Instances show different data (name/id).', 'Instances appear to use identical data.');
 
-// +5 two instances carry different values in name or id
-if (twoDifferentNames || twoDifferentIds) { t2_completeness += 5; t2_fb.completeness.push('Instances show different data.'); }
-else t2_fb.completeness.push('Instances appear to have identical data.');
+// Quality (8) — rebalanced (removed comment; +Export from 1→2)
+addCheck(t2.quality, hasStudentCardFile, 2, 'File present.', 'Expected file not found.');
+addCheck(t2.quality, usesPropsVars, 2, 'Props wired to UI.', 'Props not wired to JSX.');
+addCheck(t2.quality, (hasRegex(studentCardFile, /\bname\b/)) &&
+                     (hasRegex(studentCardFile, /\b(id|studentId)\b/)) &&
+                     (hasRegex(studentCardFile, /\b(department|dept)\b/)), 2,
+        'Reasonable prop naming.', 'Non-standard prop naming.');
+addCheck(t2.quality, anyExport, 2, 'Exports detected.', 'No export detected.');
 
-t2_completeness = points(t2_completeness, 14);
-
-// Quality (8) — softer
-// +2 baseline if file exists
-if (hasStudentCardFile) { t2_quality += 2; t2_fb.quality.push('File present.'); }
-// +2 props appear in JSX (any of {props.x} or destructured)
-if (usesPropsVars) { t2_quality += 2; t2_fb.quality.push('Props wired to UI.'); }
-// +2 reasonable prop names (name + id/studentId + department/dept)
-const reasonablePropNames =
-  (hasRegex(studentCardFile, /\bname\b/)) &&
-  (hasRegex(studentCardFile, /\b(id|studentId)\b/)) &&
-  (hasRegex(studentCardFile, /\b(department|dept)\b/));
-if (reasonablePropNames) { t2_quality += 2; t2_fb.quality.push('Reasonable prop naming.'); }
-// +1 any comment
-if (hasAnyComment) { t2_quality += 1; t2_fb.quality.push('Comment present.'); }
-// +1 any export present
-if (anyExport) { t2_quality += 1; t2_fb.quality.push('Exports detected.'); }
-
-t2_quality = points(t2_quality, 8);
-
-const task2Total = t2_correctness + t2_completeness + t2_quality;
+const task2Total = points(t2.correctness.total, 18) + points(t2.completeness.total, 14) + points(t2.quality.total, 8);
 
 /* ---------------------------
    Totals & Feedback Builder
 ----------------------------*/
 const grandTotal = submissionPoints + task1Total + task2Total;
 
-function oneLineFeedback(title, score, max, bullets) {
-  // Grab 2–3 most important reasons to keep it short
-  const picks = bullets.filter(Boolean).slice(0, 3);
-  const msg = picks.length ? picks.join(' • ') : 'No checks matched.';
-  return `**${title}: ${score}/${max}** — ${msg}`;
+function formatBucket(title, bucket) {
+  const lines = bucket.items.map(it => {
+    const mark = it.ok ? '✓' : '✗';
+    const reason = it.ok ? it.okMsg : it.missMsg;
+    const delta = `${it.points}/${it.max}`;
+    return `- ${mark} ${reason} _(+${it.points} / ${it.max})_`;
+  });
+
+  // Deductions summary
+  const missed = bucket.items.filter(it => !it.ok);
+  const lost = missed.reduce((s, it) => s + (it.max - it.points), 0);
+  const deducLines = missed.length
+    ? missed.map(it => `  • ${it.missMsg} _(-${it.max - it.points})_`)
+    : ['  • None'];
+
+  return [
+    `**${title}: ${bucket.items.reduce((s, it) => s + it.points, 0)}/${bucket.max}**`,
+    ...lines,
+    '',
+    `**Deductions in ${title}: -${lost}**`,
+    ...deducLines,
+  ].join('\n');
 }
 
-const feedback = [
-  `**Submission (${submissionPoints}/20)** — ${submissionFeedback}`,
-  oneLineFeedback('Task 1 – Correctness',  t1_correctness, 18, t1_fb.correctness),
-  oneLineFeedback('Task 1 – Completeness', t1_completeness, 14, t1_fb.completeness),
-  oneLineFeedback('Task 1 – Code Quality', t1_quality,      8,  t1_fb.quality),
-  oneLineFeedback('Task 2 – Correctness',  t2_correctness, 18, t2_fb.correctness),
-  oneLineFeedback('Task 2 – Completeness', t2_completeness, 14, t2_fb.completeness),
-  oneLineFeedback('Task 2 – Code Quality', t2_quality,      8,  t2_fb.quality),
-];
+function formatTaskFeedback(taskTitle, taskObj, taskMax) {
+  const total = points(taskObj.correctness.total, 18)
+              + points(taskObj.completeness.total, 14)
+              + points(taskObj.quality.total, 8);
+
+  return [
+    `### ${taskTitle} — **${total}/${taskMax}**`,
+    '',
+    formatBucket('Correctness', taskObj.correctness),
+    '',
+    formatBucket('Completeness', taskObj.completeness),
+    '',
+    formatBucket('Code Quality', taskObj.quality),
+  ].join('\n');
+}
+
+const feedbackDetailed = [
+  formatTaskFeedback('Task 1 (StudentCard component & wiring)', t1, 40),
+  '',
+  formatTaskFeedback('Task 2 (Props & multiple instances)', t2, 40)
+].join('\n');
 
 /* ---------------------------
    Report output
@@ -285,17 +268,20 @@ const report = {
   },
   submission: { points: submissionPoints, max: 20, feedback: submissionFeedback },
   task1: {
-    correctness: t1_correctness, completeness: t1_completeness, quality: t1_quality,
+    correctness: t1.correctness.items, completeness: t1.completeness.items, quality: t1.quality.items,
+    totals: { correctness: points(t1.correctness.total, 18), completeness: points(t1.completeness.total, 14), quality: points(t1.quality.total, 8) },
     total: task1Total, max: 40,
-    notes: { importStudentCard, rendersStudentCard, hasNameLabel, hasIdLabel, hasDeptLabel }
   },
   task2: {
-    correctness: t2_correctness, completeness: t2_completeness, quality: t2_quality,
+    correctness: t2.correctness.items, completeness: t2.completeness.items, quality: t2.quality.items,
+    totals: { correctness: points(t2.correctness.total, 18), completeness: points(t2.completeness.total, 14), quality: points(t2.quality.total, 8) },
     total: task2Total, max: 40,
-    notes: { acceptsProps, usesPropsInJSX: usesPropsVars, hasTwoInstances, twoDifferentNames, twoDifferentIds }
   },
   grandTotal: { points: grandTotal, max: 100 },
-  feedback,
+  feedback: {
+    submission: submissionFeedback,
+    detailed: feedbackDetailed
+  },
 };
 
 try {
@@ -314,28 +300,38 @@ const md = `
 - StudentCard: ${report.meta.studentCardPath}
 
 ## Submission (20)
-- Points: **${submissionPoints}/20**
+- Points: **${submissionPoints}/20** — ${submissionFeedback}
 
 ## Task 1 (40)
-- Correctness: **${t1_correctness}/18**
-- Completeness: **${t1_completeness}/14**
-- Code Quality: **${t1_quality}/8**
-- Total: **${task1Total}/40**
+${formatBucket('Correctness', t1.correctness)}
+
+${formatBucket('Completeness', t1.completeness)}
+
+${formatBucket('Code Quality', t1.quality)}
+
+**Task 1 Total:** **${task1Total}/40**
+
+---
 
 ## Task 2 (40)
-- Correctness: **${t2_correctness}/18**
-- Completeness: **${t2_completeness}/14**
-- Code Quality: **${t2_quality}/8**
-- Total: **${task2Total}/40**
+${formatBucket('Correctness', t2.correctness)}
+
+${formatBucket('Completeness', t2.completeness)}
+
+${formatBucket('Code Quality', t2.quality)}
+
+**Task 2 Total:** **${task2Total}/40**
+
+---
 
 ## Grand Total
 - **${grandTotal}/100**
 
 ---
 
-## Feedback (why you got these marks)
+## Detailed Feedback
 
-${feedback.map(f => `- ${f}`).join('\n')}
+${feedbackDetailed}
 `.trim();
 
 console.log(md);
