@@ -16,11 +16,9 @@ Setup
 
 Note: In order to gain good marks in the lab, please follow the lab instructions strickly.
 
-3. Inside the project folder, go to src and create a new folder called:
+3. Inside the project folder, go to src to find the components:
 
    src/components
-
-All your new components will go inside this folder.
 
 ------------------------------------------------------------
 Task 1 – Create a StudentCard Component
