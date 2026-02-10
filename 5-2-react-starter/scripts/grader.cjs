@@ -1,338 +1,654 @@
-// scripts/grader.cjs
-// Flexible, resilient grader for the React Starter Lab (JS + JSX)
-// - Works even if Task 2 is missing
-// - Compatible with projects that use "type": "module" (use .cjs to avoid ESM issues)
-// - Softer scoring, but now without "commenting" in Code Quality
-// - Detailed feedback: shows achieved and missed checks with point deltas
+#!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+/**
+ * Lab Autograder — React Starter Lab
+ *
+ * Repo layout (your case):
+ * - Workflow is in repo root: .github/workflows/grade.yml
+ * - Grader is in: 5-2-react-starter/ scripts/grader.cjs
+ * - Student code is in: 5-2-react-starter/src/...
+ *
+ * Marking:
+ * - 80 marks for TODOs (React checks) => 2 TODOs × 40
+ * - 20 marks for submission timing (deadline-based)
+ *   - On/before deadline => 20/20
+ *   - After deadline     => 10/20
+ *
+ * Deadline: 18 Feb 2026 1:59 PM (Asia/Riyadh, UTC+03:00)
+ *
+ * Notes:
+ * - Ignores JS/JSX comments (so examples inside comments do NOT count).
+ * - Lenient checks only: looks for top-level structure and key constructs.
+ * - Accepts common equivalents and flexible naming.
+ */
 
-/* ---------------------------
+const fs = require("fs");
+const path = require("path");
+const { execSync } = require("child_process");
+
+const ARTIFACTS_DIR = "artifacts";
+const FEEDBACK_DIR = path.join(ARTIFACTS_DIR, "feedback");
+fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
+
+/* -----------------------------
+   Deadline (Asia/Riyadh)
+   18 Feb 2026, 1:59 PM
+-------------------------------- */
+const DEADLINE_RIYADH_ISO = "2026-02-18T13:59:00+03:00";
+const DEADLINE_MS = Date.parse(DEADLINE_RIYADH_ISO);
+
+// Submission marks policy
+const SUBMISSION_MAX = 20;
+const SUBMISSION_LATE = 10;
+
+/* -----------------------------
+   TODO marks (out of 80)
+-------------------------------- */
+const tasks = [
+  { id: "todo1", name: "TODO 1: StudentCard Static Component (basic card with hardcoded info)", marks: 40 },
+  { id: "todo2", name: "TODO 2: StudentCard Dynamic (props + map in App.jsx)", marks: 40 },
+];
+
+const STEPS_MAX = tasks.reduce((sum, t) => sum + t.marks, 0); // 80
+const TOTAL_MAX = STEPS_MAX + SUBMISSION_MAX; // 100
+
+/* -----------------------------
    Helpers
-----------------------------*/
-function safeRead(p) {
-  try { return fs.readFileSync(p, 'utf8'); } catch { return ''; }
-}
-function exists(p) { return fs.existsSync(p); }
-function hasRegex(str, regex) { return !!(str && regex.test(str)); }
-function points(val, max) { return Math.max(0, Math.min(max, val)); }
-function getCommitISOTime() {
-  try { return execSync('git log -1 --format=%cI').toString().trim() || null; } catch { return null; }
-}
-function firstThatExists(paths) {
-  for (const p of paths) if (exists(p)) return p;
-  return null;
-}
-function readFirst(paths) {
-  const p = firstThatExists(paths);
-  return { path: p || null, content: p ? safeRead(p) : '' };
-}
-
-// feedback item helper
-function addCheck(bucket, condition, pts, okMsg, missMsg) {
-  bucket.items.push({
-    ok: !!condition,
-    points: condition ? pts : 0,
-    max: pts,
-    okMsg,
-    missMsg,
-  });
-  bucket.total += condition ? pts : 0;
-  bucket.max += pts;
-}
-
-/* ---------------------------
-   Inputs / Files
-----------------------------*/
-const appFilePick   = readFirst([path.join('src','App.jsx'), path.join('src','App.js')]);
-const cardFilePick  = readFirst([path.join('src','components','StudentCard.jsx'), path.join('src','components','StudentCard.js')]);
-
-const appPath = appFilePick.path;
-const appFile = appFilePick.content;
-
-const studentCardPath = cardFilePick.path;
-const studentCardFile = cardFilePick.content;
-
-const hasStudentCardFile = !!studentCardPath;
-
-/* ---------------------------
-   Submission Points (20)
-----------------------------*/
-const DUE_DATE = process.env.DUE_DATE || '';  // ISO 8601, e.g. "2025-10-01T23:59:59+03:00"
-const commitISO = getCommitISOTime();
-
-let submissionPoints = 20;
-let submissionFeedback = 'Full credit (no due date set).';
-if (DUE_DATE && commitISO) {
-  const commitTime = new Date(commitISO).getTime();
-  const dueTime    = new Date(DUE_DATE).getTime();
-  if (!Number.isNaN(commitTime) && !Number.isNaN(dueTime)) {
-    if (commitTime <= dueTime) {
-      submissionPoints = 20;
-      submissionFeedback = 'On time.';
-    } else {
-      submissionPoints = 10; // 50% penalty on submission points only
-      submissionFeedback = 'Late submission (50% penalty on submission points only).';
-    }
-  } else {
-    submissionFeedback = 'Invalid DUE_DATE or commit time; defaulting to full submission points.';
+-------------------------------- */
+function safeRead(filePath) {
+  try {
+    return fs.readFileSync(filePath, "utf8");
+  } catch {
+    return null;
   }
 }
 
-/* ---------------------------
-   Checks & regexes (flexible)
-----------------------------*/
-// Component-like in StudentCard file (any name/case)
-const anyComponentDecl =
-  hasRegex(studentCardFile, /\bfunction\s+[A-Za-z_]\w*\s*\(/) ||
-  hasRegex(studentCardFile, /\bconst\s+[A-Za-z_]\w*\s*=\s*\(/) ||
-  hasRegex(studentCardFile, /\bconst\s+[A-Za-z_]\w*\s*=\s*.*=>/);
+function mdEscape(s) {
+  return String(s).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
-// Specifically named StudentCard (for potential future use)
-const namedStudentCardDecl =
-  hasRegex(studentCardFile, /\bfunction\s+StudentCard\s*\(/) ||
-  hasRegex(studentCardFile, /\bconst\s+StudentCard\s*=\s*\(/) ||
-  hasRegex(studentCardFile, /\bconst\s+StudentCard\s*=\s*.*=>/);
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
 
-// Any export (named OR default)
-const anyExport = hasRegex(studentCardFile, /\bexport\s+default\b|\bexport\s+\{[^}]*\}/);
+function splitMarks(stepMarks, missingCount, totalChecks) {
+  if (missingCount <= 0) return stepMarks;
+  const perItem = stepMarks / totalChecks;
+  const deducted = perItem * missingCount;
+  return Math.max(0, round2(stepMarks - deducted));
+}
 
-// JSX presence (very loose)
-const hasJSXReturn = hasRegex(studentCardFile, /return\s*\(?\s*<[^>]/s) || hasRegex(studentCardFile, /=>\s*\(?\s*<[^>]/s);
+/**
+ * Strip JS/JSX comments while trying to preserve strings/templates.
+ * Not a full parser, but robust enough for beginner labs and avoids
+ * counting commented-out code.
+ */
+function stripJsComments(code) {
+  if (!code) return code;
 
-// Label presence (flexible tags/text)
-const hasNameLabel = hasRegex(studentCardFile, /<\w+[^>]*>\s*Name\b/i);
-const hasIdLabel = hasRegex(studentCardFile, /<\w+[^>]*>\s*(ID|Student\s*ID)\b/i);
-const hasDeptLabel = hasRegex(studentCardFile, /<\w+[^>]*>\s*(Department|Dept)\b/i);
+  let out = "";
+  let i = 0;
 
-// Import StudentCard (w/ or w/o extension)
-const importStudentCard = hasRegex(
-  appFile,
-  new RegExp(String.raw`import\s+StudentCard\s+from\s+['"][^'"]*components\/StudentCard(?:\.jsx?|)['"]`)
-);
-// Render in App
-const renderStudentCardCount = (appFile.match(/<StudentCard\b/g) || []).length;
-const rendersStudentCard = renderStudentCardCount >= 1;
+  let inSingle = false;
+  let inDouble = false;
+  let inTemplate = false;
 
-// Props usage
-const usesPropsVars =
-  hasRegex(studentCardFile, /\{props\.(name|id|department|dept|studentId)\}/) ||
-  (hasRegex(studentCardFile, /\{name\}/) || hasRegex(studentCardFile, /\{id\}/) || hasRegex(studentCardFile, /\{department\}/) || hasRegex(studentCardFile, /\{dept\}/) || hasRegex(studentCardFile, /\{studentId\}/));
+  while (i < code.length) {
+    const ch = code[i];
+    const next = code[i + 1];
 
-// Accepts props (params contain props or destructured fields)
-const acceptsProps =
-  hasRegex(studentCardFile, /\bfunction\s+StudentCard\s*\(\s*props\s*\)/) ||
-  hasRegex(studentCardFile, /\bconst\s+StudentCard\s*=\s*\(\s*props\s*\)\s*=>/) ||
-  hasRegex(studentCardFile, /\bfunction\s+[A-Za-z_]\w*\s*\(\s*props\s*\)/) ||
-  hasRegex(studentCardFile, /\bconst\s+[A-Za-z_]\w*\s*=\s*\(\s*props\s*\)\s*=>/) ||
-  hasRegex(studentCardFile, /\(\s*\{\s*(?:name|id|studentId|department|dept)(?:\s*,\s*(?:name|id|studentId|department|dept))*\s*\}\s*\)/);
+    // Handle string/template boundaries (with escapes)
+    if (!inDouble && !inTemplate && ch === "'" && !inSingle) {
+      inSingle = true;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (inSingle && ch === "'") {
+      let backslashes = 0;
+      for (let k = i - 1; k >= 0 && code[k] === "\\"; k--) backslashes++;
+      if (backslashes % 2 === 0) inSingle = false;
+      out += ch;
+      i++;
+      continue;
+    }
 
-// Two instances & different values (heuristic by "name" or "id")
-const hasTwoInstances = renderStudentCardCount >= 2;
-function extractPropValues(regex) {
-  const out = [];
-  const r = new RegExp(regex, 'g');
-  let m;
-  while ((m = r.exec(appFile)) !== null) out.push(m[1]);
+    if (!inSingle && !inTemplate && ch === '"' && !inDouble) {
+      inDouble = true;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (inDouble && ch === '"') {
+      let backslashes = 0;
+      for (let k = i - 1; k >= 0 && code[k] === "\\"; k--) backslashes++;
+      if (backslashes % 2 === 0) inDouble = false;
+      out += ch;
+      i++;
+      continue;
+    }
+
+    if (!inSingle && !inDouble && ch === "`" && !inTemplate) {
+      inTemplate = true;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (inTemplate && ch === "`") {
+      let backslashes = 0;
+      for (let k = i - 1; k >= 0 && code[k] === "\\"; k--) backslashes++;
+      if (backslashes % 2 === 0) inTemplate = false;
+      out += ch;
+      i++;
+      continue;
+    }
+
+    // If not inside a string/template, strip comments
+    if (!inSingle && !inDouble && !inTemplate) {
+      // line comment
+      if (ch === "/" && next === "/") {
+        i += 2;
+        while (i < code.length && code[i] !== "\n") i++;
+        continue;
+      }
+      // block comment
+      if (ch === "/" && next === "*") {
+        i += 2;
+        while (i < code.length) {
+          if (code[i] === "*" && code[i + 1] === "/") {
+            i += 2;
+            break;
+          }
+          i++;
+        }
+        continue;
+      }
+    }
+
+    out += ch;
+    i++;
+  }
+
   return out;
 }
-const namesPassed = extractPropValues(/<StudentCard[^>]*\sname\s*=\s*["'`]([^"'`]+)["'`]/);
-const idsPassed   = extractPropValues(/<StudentCard[^>]*\s(?:id|studentId)\s*=\s*["'`]([^"'`]+)["'`]/);
-const twoDifferentNames = namesPassed.length >= 2 && new Set(namesPassed).size >= 2;
-const twoDifferentIds   = idsPassed.length >= 2 && new Set(idsPassed).size >= 2;
 
-// All three props (name + id/studentId + department/dept) appear somewhere in StudentCard JSX
-const usesAllThreeProps =
-  (hasRegex(studentCardFile, /\bprops\.name\b/) || hasRegex(studentCardFile, /\{name\}/)) &&
-  (hasRegex(studentCardFile, /\bprops\.(id|studentId)\b/) || hasRegex(studentCardFile, /\{(?:id|studentId)\}/)) &&
-  (hasRegex(studentCardFile, /\bprops\.(department|dept)\b/) || hasRegex(studentCardFile, /\{(?:department|dept)\}/));
-
-/* ---------------------------
-   Task 1 Scoring (40)
-   Correctness: 18, Completeness: 14, Quality: 8
-----------------------------*/
-const t1 = { correctness: { items: [], total: 0, max: 0 },
-             completeness: { items: [], total: 0, max: 0 },
-             quality: { items: [], total: 0, max: 0 } };
-
-// Correctness (18)
-addCheck(t1.correctness, anyComponentDecl && hasJSXReturn, 6, 'Component with JSX found.', 'Component/JSX not clearly detected.');
-addCheck(t1.correctness, importStudentCard || rendersStudentCard, 6, 'Component is imported or rendered in App.', 'Not imported or rendered in App.');
-addCheck(t1.correctness, rendersStudentCard, 6, 'Component is rendered in App.', 'No rendering detected in App.');
-
-// Completeness (14)
-addCheck(t1.completeness, hasStudentCardFile, 3, 'StudentCard file found.', 'StudentCard file missing.');
-addCheck(t1.completeness, hasNameLabel, 4, 'Name label shown.', 'Name label not detected.');
-addCheck(t1.completeness, hasIdLabel, 3, 'ID/Student ID label shown.', 'ID/Student ID label not detected.');
-addCheck(t1.completeness, hasDeptLabel, 4, 'Department/Dept label shown.', 'Department/Dept label not detected.');
-
-// Quality (8) — rebalanced (removed comment; +JSX from 1→2)
-addCheck(t1.quality, hasStudentCardFile, 2, 'File present.', 'Expected file not found.');
-addCheck(t1.quality, anyComponentDecl, 2, 'Reasonable component structure.', 'Component structure not detected.');
-addCheck(t1.quality, hasJSXReturn, 2, 'JSX used.', 'No JSX return detected.');
-addCheck(t1.quality, anyExport, 1, 'Exports detected.', 'No export detected.');
-addCheck(t1.quality, (importStudentCard || rendersStudentCard) && rendersStudentCard, 1, 'Wired into App.', 'Not wired into App (import + render).');
-
-const task1Total = points(t1.correctness.total, 18) + points(t1.completeness.total, 14) + points(t1.quality.total, 8);
-
-/* ---------------------------
-   Task 2 Scoring (40)
-   Correctness: 18, Completeness: 14, Quality: 8
-----------------------------*/
-const t2 = { correctness: { items: [], total: 0, max: 0 },
-             completeness: { items: [], total: 0, max: 0 },
-             quality: { items: [], total: 0, max: 0 } };
-
-// Correctness (18)
-addCheck(t2.correctness, acceptsProps || usesPropsVars, 6, 'Props accepted/used.', 'Props not clearly accepted/used.');
-addCheck(t2.correctness, usesPropsVars, 6, 'Props displayed in JSX.', 'Props not shown in JSX.');
-addCheck(t2.correctness, hasTwoInstances, 6, 'Two <StudentCard> instances rendered.', 'Less than two instances rendered.');
-
-// Completeness (14)
-addCheck(t2.completeness, usesAllThreeProps, 9, 'All three props used (name, id/studentId, department/dept).', 'Missing one or more required props.');
-addCheck(t2.completeness, twoDifferentNames || twoDifferentIds, 5, 'Instances show different data (name/id).', 'Instances appear to use identical data.');
-
-// Quality (8) — rebalanced (removed comment; +Export from 1→2)
-addCheck(t2.quality, hasStudentCardFile, 2, 'File present.', 'Expected file not found.');
-addCheck(t2.quality, usesPropsVars, 2, 'Props wired to UI.', 'Props not wired to JSX.');
-addCheck(t2.quality, (hasRegex(studentCardFile, /\bname\b/)) &&
-                     (hasRegex(studentCardFile, /\b(id|studentId)\b/)) &&
-                     (hasRegex(studentCardFile, /\b(department|dept)\b/)), 2,
-        'Reasonable prop naming.', 'Non-standard prop naming.');
-addCheck(t2.quality, anyExport, 2, 'Exports detected.', 'No export detected.');
-
-const task2Total = points(t2.correctness.total, 18) + points(t2.completeness.total, 14) + points(t2.quality.total, 8);
-
-/* ---------------------------
-   Totals & Feedback Builder
-----------------------------*/
-const grandTotal = submissionPoints + task1Total + task2Total;
-
-function formatBucket(title, bucket) {
-  const lines = bucket.items.map(it => {
-    const mark = it.ok ? '✓' : '✗';
-    const reason = it.ok ? it.okMsg : it.missMsg;
-    const delta = `${it.points}/${it.max}`;
-    return `- ${mark} ${reason} _(+${it.points} / ${it.max})_`;
-  });
-
-  // Deductions summary
-  const missed = bucket.items.filter(it => !it.ok);
-  const lost = missed.reduce((s, it) => s + (it.max - it.points), 0);
-  const deducLines = missed.length
-    ? missed.map(it => `  • ${it.missMsg} _(-${it.max - it.points})_`)
-    : ['  • None'];
-
-  return [
-    `**${title}: ${bucket.items.reduce((s, it) => s + it.points, 0)}/${bucket.max}**`,
-    ...lines,
-    '',
-    `**Deductions in ${title}: -${lost}**`,
-    ...deducLines,
-  ].join('\n');
+function existsFile(p) {
+  try {
+    return fs.existsSync(p) && fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
 }
 
-function formatTaskFeedback(taskTitle, taskObj, taskMax) {
-  const total = points(taskObj.correctness.total, 18)
-              + points(taskObj.completeness.total, 14)
-              + points(taskObj.quality.total, 8);
+function listAllFiles(rootDir) {
+  const ignoreDirs = new Set([
+    "node_modules",
+    ".git",
+    ARTIFACTS_DIR,
+    "dist",
+    "build",
+    ".next",
+    ".cache",
+  ]);
+  const stack = [rootDir];
+  const out = [];
 
-  return [
-    `### ${taskTitle} — **${total}/${taskMax}**`,
-    '',
-    formatBucket('Correctness', taskObj.correctness),
-    '',
-    formatBucket('Completeness', taskObj.completeness),
-    '',
-    formatBucket('Code Quality', taskObj.quality),
-  ].join('\n');
+  while (stack.length) {
+    const dir = stack.pop();
+    let entries = [];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const e of entries) {
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!ignoreDirs.has(e.name)) stack.push(full);
+      } else if (e.isFile()) {
+        out.push(full);
+      }
+    }
+  }
+  return out;
 }
 
-const feedbackDetailed = [
-  formatTaskFeedback('Task 1 (StudentCard component & wiring)', t1, 40),
-  '',
-  formatTaskFeedback('Task 2 (Props & multiple instances)', t2, 40)
-].join('\n');
+/* -----------------------------
+   IMPORTANT: paths for your repo layout
+   - workflow runs at repo root (cwd = repo root)
+   - grader lives in 5-2-react-starter/scripts/grader.cjs
+   - student code lives in 5-2-react-starter/src/...
+-------------------------------- */
+const REPO_ROOT = process.cwd();
+const PROJECT_ROOT = path.join(REPO_ROOT, "5-2-react-starter");
 
-/* ---------------------------
-   Report output
-----------------------------*/
-const report = {
-  meta: {
-    appPath: appPath || '(not found)',
-    studentCardPath: studentCardPath || '(not found)',
-    dueDate: DUE_DATE || '(not set; assuming on-time)',
-    commitISO: commitISO || '(not available)',
-  },
-  submission: { points: submissionPoints, max: 20, feedback: submissionFeedback },
-  task1: {
-    correctness: t1.correctness.items, completeness: t1.completeness.items, quality: t1.quality.items,
-    totals: { correctness: points(t1.correctness.total, 18), completeness: points(t1.completeness.total, 14), quality: points(t1.quality.total, 8) },
-    total: task1Total, max: 40,
-  },
-  task2: {
-    correctness: t2.correctness.items, completeness: t2.completeness.items, quality: t2.quality.items,
-    totals: { correctness: points(t2.correctness.total, 18), completeness: points(t2.completeness.total, 14), quality: points(t2.quality.total, 8) },
-    total: task2Total, max: 40,
-  },
-  grandTotal: { points: grandTotal, max: 100 },
-  feedback: {
-    submission: submissionFeedback,
-    detailed: feedbackDetailed
-  },
-};
+/* -----------------------------
+   Find files (inside PROJECT_ROOT)
+-------------------------------- */
+function findReactAppFile() {
+  const candidates = [
+    path.join(PROJECT_ROOT, "src", "App.jsx"),
+    path.join(PROJECT_ROOT, "src", "App.js"),
+  ];
+  for (const p of candidates) if (existsFile(p)) return p;
+
+  // fallback: first App.jsx/App.js anywhere under PROJECT_ROOT
+  const all = listAllFiles(PROJECT_ROOT);
+  return all.find((p) => /(^|\/)App\.(jsx|js)$/i.test(p)) || null;
+}
+
+function findComponentFileByNames(names) {
+  const preferred = names
+    .flatMap((n) => [path.join(PROJECT_ROOT, "src", "components", n)])
+    .filter((p) => existsFile(p));
+  if (preferred.length) return preferred[0];
+
+  const all = listAllFiles(PROJECT_ROOT);
+  const lowerSet = new Set(names.map((x) => x.toLowerCase()));
+  return all.find((p) => lowerSet.has(path.basename(p).toLowerCase())) || null;
+}
+
+/* -----------------------------
+   Determine submission time
+-------------------------------- */
+let lastCommitISO = null;
+let lastCommitMS = null;
 
 try {
-  fs.mkdirSync('grading', { recursive: true });
-  fs.writeFileSync('grading/grade.json', JSON.stringify(report, null, 2));
-} catch { /* ignore */ }
+  lastCommitISO = execSync("git log -1 --format=%cI", { encoding: "utf8" }).trim();
+  lastCommitMS = Date.parse(lastCommitISO);
+} catch {
+  // fallback (still grades, but treat as "now")
+  lastCommitISO = new Date().toISOString();
+  lastCommitMS = Date.now();
+}
 
-const md = `
-# Auto Grade Report
+/* -----------------------------
+   Submission marks
+-------------------------------- */
+const isLate = Number.isFinite(lastCommitMS) ? lastCommitMS > DEADLINE_MS : true;
+const submissionScore = isLate ? SUBMISSION_LATE : SUBMISSION_MAX;
 
-**Due Date:** ${report.meta.dueDate}  
-**Commit Time:** ${report.meta.commitISO}
+/* -----------------------------
+   Load student files (React)
+-------------------------------- */
+const appFile = findReactAppFile();
 
-**Detected files:**  
-- App: ${report.meta.appPath}  
-- StudentCard: ${report.meta.studentCardPath}
+// Your actual filenames (from screenshot)
+const staticCardFile = findComponentFileByNames([
+  "Student_Card_Static.jsx",
+  "StudentCard.jsx",
+  "StudentCardStatic.jsx",
+  "StudentCardSatic.jsx", // tolerate typo
+]);
 
-## Submission (20)
-- Points: **${submissionPoints}/20** — ${submissionFeedback}
+const dynamicCardFile = findComponentFileByNames([
+  "Student_Card_Static_Dynamic.jsx",
+  "StudentCardDynamic.jsx",
+]);
 
-## Task 1 (40)
-${formatBucket('Correctness', t1.correctness)}
+const appRaw = appFile ? safeRead(appFile) : null;
+const staticRaw = staticCardFile ? safeRead(staticCardFile) : null;
+const dynamicRaw = dynamicCardFile ? safeRead(dynamicCardFile) : null;
 
-${formatBucket('Completeness', t1.completeness)}
+const app = appRaw ? stripJsComments(appRaw) : null;
+const staticCard = staticRaw ? stripJsComments(staticRaw) : null;
+const dynamicCard = dynamicRaw ? stripJsComments(dynamicRaw) : null;
 
-${formatBucket('Code Quality', t1.quality)}
+const results = []; // { id, name, max, score, checklist[], deductions[] }
 
-**Task 1 Total:** **${task1Total}/40**
+/* -----------------------------
+   Result helpers
+-------------------------------- */
+function addResult(task, required, missing) {
+  const score = splitMarks(task.marks, missing.length, required.length);
+  results.push({
+    id: task.id,
+    name: task.name,
+    max: task.marks,
+    score,
+    checklist: required.map((r) => `${r.ok ? "✅" : "❌"} ${r.label}`),
+    deductions: missing.length ? missing.map((m) => `Missing: ${m.label}`) : [],
+  });
+}
+
+function failTask(task, reason) {
+  results.push({
+    id: task.id,
+    name: task.name,
+    max: task.marks,
+    score: 0,
+    checklist: [],
+    deductions: [reason],
+  });
+}
+
+/* -----------------------------
+   Light detection helpers
+-------------------------------- */
+function mkHas(code) {
+  return (re) => re.test(code);
+}
+
+function anyOf(has, res) {
+  return res.some((r) => has(r));
+}
+
+/* -----------------------------
+   Grade TODOs (React)
+-------------------------------- */
+
+// TODO1: Static Student Card
+{
+  if (!staticCard) {
+    failTask(
+      tasks[0],
+      staticCardFile
+        ? `Could not read component file at: ${staticCardFile}`
+        : "Static card component file not found (expected src/components/Student_Card_Static.jsx)."
+    );
+  } else {
+    const has = mkHas(staticCard);
+
+    const required = [
+      {
+        label: "Has a React component (function or const arrow function) (lenient)",
+        ok: anyOf(has, [
+          /\bfunction\s+StudentCard/i,
+          /\bfunction\s+StudentCardStatic/i,
+          /\bfunction\s+StudentCardSatic/i,
+          /\bconst\s+StudentCard/i,
+          /\bconst\s+StudentCardStatic/i,
+          /\bconst\s+StudentCardSatic/i,
+        ]),
+      },
+      {
+        label: "Returns JSX with a wrapping <div> (lenient)",
+        ok: anyOf(has, [
+          /\breturn\s*\(\s*<div[\s>]/i,
+          /return\s+<div[\s>]/i,
+          /<div[\s>][\s\S]*<\/div>/i,
+        ]),
+      },
+      {
+        label: "Includes an <h3> element for student name (lenient)",
+        ok: /<h3[\s>]/i.test(staticCard),
+      },
+      {
+        label: "Includes at least two <p> elements for id + department (lenient)",
+        ok: (staticCard.match(/<p[\s>]/gi) || []).length >= 2,
+      },
+      {
+        label: "Exports default (any component name) (lenient)",
+        ok: anyOf(has, [/export\s+default\s+\w+/i, /export\s+default\s+function\s+\w+/i]),
+      },
+      {
+        label: 'Mentions labels like "Name" / "ID" / "Department" OR placeholders (lenient)',
+        ok: anyOf(has, [
+          /\bname\b/i,
+          /\bdepartment\b/i,
+          /\bdept\b/i,
+          /\bid\b/i,
+          /YOUR_NAME/i,
+          /YOUR_STUDENT_ID/i,
+          /YOUR_DEPARTMENT/i,
+        ]),
+      },
+    ];
+
+    const missing = required.filter((r) => !r.ok);
+    addResult(tasks[0], required, missing);
+  }
+}
+
+// TODO2: Dynamic card (props) + map in App.jsx
+{
+  if (!dynamicCard && !app) {
+    failTask(tasks[1], "Missing key React files: App.jsx (or App.js) and Student_Card_Static_Dynamic.jsx.");
+  } else {
+    const required = [];
+
+    // Dynamic component checks
+    if (!dynamicCard) {
+      required.push({
+        label: "Dynamic card component file exists (expected src/components/Student_Card_Static_Dynamic.jsx)",
+        ok: false,
+      });
+    } else {
+      const hasD = mkHas(dynamicCard);
+
+      required.push({
+        label: "Dynamic component accepts props (props param or destructuring) (lenient)",
+        ok: anyOf(hasD, [
+          /\bfunction\s+\w+\s*\(\s*props\s*\)/i,
+          /\bfunction\s+\w+\s*\(\s*\{\s*[^}]*\}\s*\)/i,
+          /\bconst\s+\w+\s*=\s*\(\s*props\s*\)\s*=>/i,
+          /\bconst\s+\w+\s*=\s*\(\s*\{\s*[^}]*\}\s*\)\s*=>/i,
+        ]),
+      });
+
+      required.push({
+        label: "Uses props values in JSX (props.name/id/department OR destructured vars) (lenient)",
+        ok: anyOf(hasD, [
+          /\bprops\s*\.\s*name\b/i,
+          /\bprops\s*\.\s*id\b/i,
+          /\bprops\s*\.\s*department\b/i,
+          /\bprops\s*\.\s*dept\b/i,
+          /\{\s*name\s*\}/i,
+          /\{\s*id\s*\}/i,
+          /\{\s*department\s*\}/i,
+          /\{\s*dept\s*\}/i,
+        ]),
+      });
+
+      required.push({
+        label: "Renders name in <h3> and other fields in <p> tags (lenient)",
+        ok: /<h3[\s>]/i.test(dynamicCard) && (dynamicCard.match(/<p[\s>]/gi) || []).length >= 2,
+      });
+
+      required.push({
+        label: "Exports default (lenient)",
+        ok: anyOf(hasD, [/export\s+default\s+\w+/i, /export\s+default\s+function\s+\w+/i]),
+      });
+    }
+
+    // App.jsx checks (map + array)
+    if (!app) {
+      required.push({
+        label: "App.jsx (or App.js) found/readable",
+        ok: false,
+      });
+    } else {
+      const hasA = mkHas(app);
+
+      required.push({
+        label: "Defines a students array (const/let) (lenient)",
+        ok: anyOf(hasA, [/\bconst\s+students\s*=\s*\[/i, /\blet\s+students\s*=\s*\[/i]),
+      });
+
+      required.push({
+        label: "Student objects include id, name, department (or dept) (lenient)",
+        ok: anyOf(hasA, [
+          /\{\s*id\s*:\s*\d+/i,
+          /\{\s*name\s*:\s*["'`]/i,
+          /\{\s*department\s*:\s*["'`]/i,
+          /\{\s*dept\s*:\s*["'`]/i,
+        ]),
+      });
+
+      required.push({
+        label: "Uses map() to render cards (students.map(...)) (lenient)",
+        ok: anyOf(hasA, [/\bstudents\s*\.\s*map\s*\(/i, /\.map\s*\(\s*\(\s*\w+\s*\)\s*=>/i]),
+      });
+
+      required.push({
+        label: "Renders a Student card component in JSX (StudentCardDynamic/StudentCard etc.) (lenient)",
+        ok: anyOf(hasA, [
+          /<\s*StudentCardDynamic\b/i,
+          /<\s*Student_Card_Static_Dynamic\b/i, // in case they used filename as component name
+          /<\s*StudentCard\b/i,
+        ]),
+      });
+
+      required.push({
+        label: "Passes props from map item (name/id/department) (lenient)",
+        ok: anyOf(hasA, [
+          /\bname\s*=\s*\{\s*\w+\s*\.\s*name\s*\}/i,
+          /\bid\s*=\s*\{\s*\w+\s*\.\s*id\s*\}/i,
+          /\bdepartment\s*=\s*\{\s*\w+\s*\.\s*department\s*\}/i,
+          /\bdept\s*=\s*\{\s*\w+\s*\.\s*dept\s*\}/i,
+        ]),
+      });
+
+      required.push({
+        label: "Uses unique key prop (key={...}) (lenient)",
+        ok: anyOf(hasA, [/\bkey\s*=\s*\{\s*[^}]+\s*\}/i]),
+      });
+    }
+
+    const missing = required.filter((r) => !r.ok);
+    addResult(tasks[1], required, missing);
+  }
+}
+
+/* -----------------------------
+   Final scoring
+-------------------------------- */
+const stepsScore = results.reduce((sum, r) => sum + r.score, 0);
+const totalScore = round2(stepsScore + submissionScore);
+
+/* -----------------------------
+   Build summary + feedback
+-------------------------------- */
+const submissionLine = `- **Lab:** 5-2-react-starter-main
+- **Deadline (Riyadh / UTC+03:00):** ${DEADLINE_RIYADH_ISO}
+- **Last commit time (from git log):** ${lastCommitISO}
+- **Submission marks:** **${submissionScore}/${SUBMISSION_MAX}** ${isLate ? "(Late submission)" : "(On time)"}
+`;
+
+let summary = `# 5-2-react-starter-main — Autograding Summary
+
+## Submission
+
+${submissionLine}
+
+## Files Checked
+
+- Repo root: ${REPO_ROOT}
+- Project root: ${PROJECT_ROOT}
+- App: ${appFile ? `✅ ${appFile}` : "❌ App.jsx/App.js not found"}
+- Static card: ${staticCardFile ? `✅ ${staticCardFile}` : "❌ Static component file not found"}
+- Dynamic card: ${dynamicCardFile ? `✅ ${dynamicCardFile}` : "❌ Dynamic component file not found"}
+
+## Marks Breakdown
+
+| Component | Marks |
+|---|---:|
+`;
+
+for (const r of results) summary += `| ${r.name} | ${r.score}/${r.max} |\n`;
+summary += `| Submission (timing) | ${submissionScore}/${SUBMISSION_MAX} |\n`;
+
+summary += `
+## Total Marks
+
+**${totalScore} / ${TOTAL_MAX}**
+
+## Detailed Checks (What you did / missed)
+`;
+
+for (const r of results) {
+  const done = (r.checklist || []).filter((x) => x.startsWith("✅"));
+  const missed = (r.checklist || []).filter((x) => x.startsWith("❌"));
+
+  summary += `
+<details>
+  <summary><strong>${mdEscape(r.name)}</strong> — ${r.score}/${r.max}</summary>
+
+  <br/>
+
+  <strong>✅ Found</strong>
+  ${done.length ? "\n" + done.map((x) => `- ${mdEscape(x)}`).join("\n") : "\n- (Nothing detected)"}
+
+  <br/><br/>
+
+  <strong>❌ Missing</strong>
+  ${missed.length ? "\n" + missed.map((x) => `- ${mdEscape(x)}`).join("\n") : "\n- (Nothing missing)"}
+
+  <br/><br/>
+
+  <strong>❗ Deductions / Notes</strong>
+  ${
+    r.deductions && r.deductions.length
+      ? "\n" + r.deductions.map((d) => `- ${mdEscape(d)}`).join("\n")
+      : "\n- No deductions."
+  }
+
+</details>
+`;
+}
+
+summary += `
+> Full feedback is also available in: \`artifacts/feedback/README.md\`
+`;
+
+let feedback = `# 5-2-react-starter-main — Feedback
+
+## Submission
+
+${submissionLine}
+
+## Files Checked
+
+- Repo root: ${REPO_ROOT}
+- Project root: ${PROJECT_ROOT}
+- App: ${appFile ? `✅ ${appFile}` : "❌ App.jsx/App.js not found"}
+- Static card: ${staticCardFile ? `✅ ${staticCardFile}` : "❌ Static component file not found"}
+- Dynamic card: ${dynamicCardFile ? `✅ ${dynamicCardFile}` : "❌ Dynamic component file not found"}
 
 ---
 
-## Task 2 (40)
-${formatBucket('Correctness', t2.correctness)}
+## TODO-by-TODO Feedback
+`;
 
-${formatBucket('Completeness', t2.completeness)}
+for (const r of results) {
+  feedback += `
+### ${r.name} — **${r.score}/${r.max}**
 
-${formatBucket('Code Quality', t2.quality)}
+**Checklist**
+${r.checklist.length ? r.checklist.map((x) => `- ${x}`).join("\n") : "- (No checks available)"}
 
-**Task 2 Total:** **${task2Total}/40**
+**Deductions / Notes**
+${r.deductions.length ? r.deductions.map((d) => `- ❗ ${d}`).join("\n") : "- ✅ No deductions. Good job!"}
+`;
+}
 
+feedback += `
 ---
 
-## Grand Total
-- **${grandTotal}/100**
+## How marks were deducted (rules)
 
----
+- JS/JSX comments are ignored (so examples in comments do NOT count).
+- Checks are intentionally light: they look for key constructs and basic structure.
+- Code can be in ANY order; repeated code is allowed.
+- Common equivalents are accepted, and naming is flexible.
+- Missing required items reduce marks proportionally within that TODO.
+`;
 
-## Detailed Feedback
+/* -----------------------------
+   Write outputs
+-------------------------------- */
+if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 
-${feedbackDetailed}
-`.trim();
+const csv = `student,score,max_score
+all_students,${totalScore},${TOTAL_MAX}
+`;
 
-console.log(md);
-try { fs.writeFileSync('grading/grade.md', md); } catch { /* ignore */ }
+fs.mkdirSync(ARTIFACTS_DIR, { recursive: true });
+fs.writeFileSync(path.join(ARTIFACTS_DIR, "grade.csv"), csv);
+fs.writeFileSync(path.join(FEEDBACK_DIR, "README.md"), feedback);
+
+console.log(
+  `✔ Lab graded: ${totalScore}/${TOTAL_MAX} (Submission: ${submissionScore}/${SUBMISSION_MAX}, TODOs: ${stepsScore}/${STEPS_MAX}).`
+);
