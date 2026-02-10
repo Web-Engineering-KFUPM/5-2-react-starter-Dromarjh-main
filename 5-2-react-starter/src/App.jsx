@@ -118,9 +118,17 @@ Expected Output:
 The page should display a student card for each student in the list.
 */
 
-import './App.css'
+
+import "./App.css";
+import StudentCardStatic from "./components/Student_Card_Static";
+import StudentCardDynamic from "./components/Student_Card_Static_Dynamic";
 
 function App() {
+  const students = [
+    { id: 1, name: "Hasan", department: "ICS" },
+    { id: 2, name: "Turki", department: "SWE" },
+  ];
+
   return (
     <div className="app">
       <header className="dashboard-header">
@@ -130,11 +138,22 @@ function App() {
 
       <main className="dashboard-main">
         <div className="cards-container">
-          {/* TODO: Import and render StudentCard components here */}
+          {/* Task 1 (static card) */}
+          <StudentCardStatic />
+
+          {/* Task 2 (dynamic cards) */}
+          {students.map((student) => (
+            <StudentCardDynamic
+              key={student.id}
+              name={student.name}
+              id={student.id}
+              department={student.department}
+            />
+          ))}
         </div>
       </main>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
