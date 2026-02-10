@@ -1,9 +1,9 @@
 function StudentCardStatic() {
   return (
     <div>
-      <h3>Name: YOUR_NAME</h3>
-      <p>ID: YOUR_STUDENT_ID</p>
-      <p>Department: YOUR_DEPARTMENT</p>
+      <h3>Name: Athar Parvez</h3>
+      <p>ID: G202393830</p>
+      <p>Department: ICS</p>
     </div>
   );
 }
