@@ -81,10 +81,10 @@ react-starter/
 ---
 
 ## 📂 Lab Instructions
-You can find the detailed step-by-step instructions for this lab in the **instructions.txt** file.
+You can find the detailed step-by-step instructions for this lab in the **app.jsx** file.
 
 ## Creating a Vite + React Project
-Run the following commands in VS Code terminal:
+Run the following commands in VS Code terminal to create the react project (in this lab react project is already created):
 
 ```bash
 # Create a new Vite project
