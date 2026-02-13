@@ -5,6 +5,11 @@ React is a **JavaScript library** developed by **Facebook (Meta)** in 2013. It w
 
 React introduced the concept of **components** – small, reusable pieces of UI – making web development more structured and efficient.
 
+> **Note:**  
+> Please use app.jsx file to perform TODOs and follow the steps strictly to gain good marks in the assignment.  
+>  
+> **Due Date:** 18 Feb, 2026, **11:59 PM**
+
 ---
 
 ## How React is Different from Standard Front-End Techniques
@@ -67,9 +72,9 @@ react-starter/
 ---
 
 ## Reading Assignment
-1. [5.5 Getting started with React](https://learn.zybooks.com/zybook/SWE363Fall2025/chapter/5/section/5)  
-2. [5.6 JSX](https://learn.zybooks.com/zybook/SWE363Fall2025/chapter/5/section/6)  
-3. [5.7 Components](https://learn.zybooks.com/zybook/SWE363Fall2025/chapter/5/section/7)  
+1. 5.5 Getting started with React  
+2. 5.6 JSX
+3. 5.7 Components 
 
 ---
 

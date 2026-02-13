@@ -124,10 +124,6 @@ import StudentCardStatic from "./components/Student_Card_Static";
 import StudentCardDynamic from "./components/Student_Card_Static_Dynamic";
 
 function App() {
-  const students = [
-    { id: 1, name: "Hasan", department: "ICS" },
-    { id: 2, name: "Turki", department: "SWE" },
-  ];
 
   return (
     <div className="app">
@@ -139,17 +135,9 @@ function App() {
       <main className="dashboard-main">
         <div className="cards-container">
           {/* Task 1 (static card) */}
-          <StudentCardStatic />
 
           {/* Task 2 (dynamic cards) */}
-          {students.map((student) => (
-            <StudentCardDynamic
-              key={student.id}
-              name={student.name}
-              id={student.id}
-              department={student.department}
-            />
-          ))}
+
         </div>
       </main>
     </div>
