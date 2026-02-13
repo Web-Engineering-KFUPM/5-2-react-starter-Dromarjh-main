@@ -54,14 +54,16 @@ When you create a React project (using Vite or Create React App), the structure 
 
 ```
 react-starter/
-├── node_modules/        # Dependencies
-├── public/              # Static files
-├── src/                 # Your code lives here
-│   ├── App.jsx           # Main app component
-│   ├── main.jsx          # Entry point that renders App
-│   └── components/      # Custom reusable components
-├── package.json         # Project configuration
-└── vite.config.js       # Vite configuration
+├── node_modules/                # Dependencies
+├── public/                      # Static files
+├── src/
+│   ├── components/              # Custom reusable components
+│   │   ├── Student_Card_Static.jsx
+│   │   └── Student_Card_Static_Dynamic.jsx
+│   ├── App.jsx                  # Main app component
+│   └── main.jsx                 # Entry point that renders App
+├── package.json                 # Project configuration
+└── vite.config.js               # Vite configuration
 ```
 
 **How it works:**  
